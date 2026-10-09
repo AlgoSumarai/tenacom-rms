@@ -1,0 +1,14 @@
+# Optional for corporate TLS interception. Exports public roots only; no private keys.
+services:
+  migrate:
+    build:
+      secrets: [build_ca]
+  api:
+    build:
+      secrets: [build_ca]
+  web:
+    build:
+      secrets: [build_ca]
+secrets:
+  build_ca:
+    file: .local/build-ca.pem

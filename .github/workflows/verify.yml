@@ -1,0 +1,74 @@
+name: Verify
+on:
+  push:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  application:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: ci-only-${{ github.run_id }}-${{ github.run_attempt }}
+          MYSQL_DATABASE: tenacom_test
+        ports: ["3306:3306"]
+        options: >-
+          --health-cmd="mysqladmin ping --silent"
+          --health-interval=5s --health-timeout=5s --health-retries=30
+    env:
+      MYSQL_PWD: ci-only-${{ github.run_id }}-${{ github.run_attempt }}
+      TEST_DATABASE: Server=127.0.0.1;Database=tenacom_test;User=root;Password=ci-only-${{ github.run_id }}-${{ github.run_attempt }}
+      ConnectionStrings__Database: Server=127.0.0.1;Database=tenacom_e2e;User=root;Password=ci-only-${{ github.run_id }}-${{ github.run_attempt }}
+      ASPNETCORE_ENVIRONMENT: Development
+      Security__Origin: http://localhost:3000
+      Security__SecureCookies: "false"
+      ASPNETCORE_URLS: http://localhost:5080
+      E2E_ADMIN_EMAIL: browser-admin@example.test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: apps/web/package-lock.json
+      - name: Build and test API with MySQL
+        run: |
+          dotnet build --configuration Release
+          dotnet test --configuration Release --no-build
+          dotnet format --verify-no-changes --no-restore
+      - name: Install and verify web
+        working-directory: apps/web
+        run: |
+          npm ci
+          npm run lint
+          npm run typecheck
+          npm run format:check
+          npm run build
+          npx playwright install --with-deps chromium
+      - name: Prepare isolated browser database
+        run: |
+          docker exec -e MYSQL_PWD "$MYSQL_CONTAINER" mysql -u root -e 'CREATE DATABASE tenacom_e2e;'
+          dotnet run --project apps/api --configuration Release --no-build -- --migrate
+          export BOOTSTRAP_EMAIL="$E2E_ADMIN_EMAIL"
+          export BOOTSTRAP_PASSWORD="$(openssl rand -hex 32)"
+          echo "::add-mask::$BOOTSTRAP_PASSWORD"
+          dotnet run --project apps/api --configuration Release --no-build -- --bootstrap
+          echo "E2E_ADMIN_PASSWORD=$BOOTSTRAP_PASSWORD" >> "$GITHUB_ENV"
+        env:
+          MYSQL_CONTAINER: ${{ job.services.mysql.id }}
+      - name: Run browser acceptance tests
+        run: |
+          dotnet run --project apps/api --configuration Release --no-build > /tmp/tenacom-api.log 2>&1 &
+          (cd apps/web && npm start > /tmp/tenacom-web.log 2>&1) &
+          for attempt in $(seq 1 40); do
+            if curl --fail --silent http://localhost:5080/health/ready >/dev/null && curl --fail --silent http://localhost:3000/login >/dev/null; then break; fi
+            sleep 2
+          done
+          cd apps/web
+          npm run test:e2e

@@ -1,0 +1,8 @@
+# Run Prepare-E2E.ps1 first. Keeps synthetic browser data out of the main database.
+services:
+  migrate:
+    environment:
+      ConnectionStrings__Database: Server=db;Database=tenacom_e2e;User=tenacom;Password=${MYSQL_PASSWORD}
+  api:
+    environment:
+      ConnectionStrings__Database: Server=db;Database=tenacom_e2e;User=tenacom;Password=${MYSQL_PASSWORD}

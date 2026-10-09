@@ -1,0 +1,22 @@
+-- Starter vocabulary only: staff can extend all four categories through the API/UI.
+INSERT INTO VocabularyTerms(Id,Kind,Name) VALUES
+('10000000-0000-0000-0000-000000000001','Field','Software engineering'),
+('10000000-0000-0000-0000-000000000002','Field','Mechanical engineering'),
+('10000000-0000-0000-0000-000000000003','Field','Data science'),
+('10000000-0000-0000-0000-000000000004','Field','Project management'),
+('10000000-0000-0000-0000-000000000005','Field','Finance'),
+('10000000-0000-0000-0000-000000000006','Field','Design'),
+('10000000-0000-0000-0000-000000000007','Field','Legal'),
+('10000000-0000-0000-0000-000000000008','Industry','Mining'),
+('10000000-0000-0000-0000-000000000009','Industry','Agriculture'),
+('10000000-0000-0000-0000-000000000010','Industry','Manufacturing'),
+('10000000-0000-0000-0000-000000000011','Industry','Technology'),
+('10000000-0000-0000-0000-000000000012','Industry','Financial services'),
+('10000000-0000-0000-0000-000000000013','Skill','C#'),
+('10000000-0000-0000-0000-000000000014','Skill','Python'),
+('10000000-0000-0000-0000-000000000015','Skill','CAD'),
+('10000000-0000-0000-0000-000000000016','Skill','Data analysis'),
+('10000000-0000-0000-0000-000000000017','Skill','Stakeholder management'),
+('10000000-0000-0000-0000-000000000018','Expertise','Connected systems'),
+('10000000-0000-0000-0000-000000000019','Expertise','Product development'),
+('10000000-0000-0000-0000-000000000020','Expertise','Process improvement');

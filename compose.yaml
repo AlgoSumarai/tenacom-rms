@@ -1,0 +1,60 @@
+name: tenacom-rms
+services:
+  db:
+    image: mysql:8.4
+    environment:
+      MYSQL_DATABASE: tenacom
+      MYSQL_USER: tenacom
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:?Set MYSQL_PASSWORD in .env}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?Set MYSQL_ROOT_PASSWORD in .env}
+    volumes:
+      - mysql-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "MYSQL_PWD=$$MYSQL_PASSWORD mysql -u tenacom -D tenacom -e 'SELECT 1' >/dev/null 2>&1"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+    restart: unless-stopped
+  migrate:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    command: ["--migrate"]
+    environment:
+      ConnectionStrings__Database: Server=db;Database=tenacom;User=tenacom;Password=${MYSQL_PASSWORD}
+    depends_on:
+      db: { condition: service_healthy }
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    environment:
+      ConnectionStrings__Database: Server=db;Database=tenacom;User=tenacom;Password=${MYSQL_PASSWORD}
+      ASPNETCORE_ENVIRONMENT: ${ASPNETCORE_ENVIRONMENT:-Production}
+      Security__Origin: ${APP_ORIGIN:?Set APP_ORIGIN}
+      Security__SecureCookies: ${SECURE_COOKIES:-true}
+      AllowedHosts: api;localhost;127.0.0.1
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+    healthcheck:
+      test: ["CMD", "dotnet", "Tenacom.Api.dll", "--health"]
+      interval: 15s
+      timeout: 10s
+      start_period: 20s
+      retries: 10
+    restart: unless-stopped
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    ports: ["127.0.0.1:3000:3000"]
+    depends_on:
+      api: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/login').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+volumes:
+  mysql-data:

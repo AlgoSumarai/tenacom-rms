@@ -1,0 +1,14 @@
+.git
+.kilo
+.local
+.env
+.env.*
+**/.env
+**/.env.*
+**/node_modules
+**/.next
+**/bin
+**/obj
+**/test-results
+**/playwright-report
+**/*.log
