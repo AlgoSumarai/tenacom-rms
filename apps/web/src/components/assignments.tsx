@@ -2,9 +2,12 @@
 import { useState } from "react";
 import Link from "next/link";
 import { api, date, message } from "@/lib/api";
-import type { Assignment, Page, Profile, Project } from "@/lib/types";
+import type { Assignment, Page, Project } from "@/lib/types";
 import { useUser } from "./session";
 import { Empty, Loading, Notice, Pager, useData } from "./ui";
+import { ActionsMenu, LinkedRow } from "./entity-ui";
+import { detailHref } from "./list-state";
+import { RecordFilter } from "./record-filter";
 export function Assignments({ project }: { project: Project }) {
   const user = useUser();
   const [page, setPage] = useState(1);
@@ -17,18 +20,24 @@ export function Assignments({ project }: { project: Project }) {
     <section className="card">
       <div className="row between">
         <h2>Project team</h2>
-        {user.role === "Admin" && (
-          <button
-            onClick={() => {
-              setEdit(null);
-              setShow(!show);
-            }}
-          >
-            {show ? "Close form" : "+ Assign resource"}
-          </button>
-        )}
+        {user.role === "Admin" &&
+          ["Planned", "Active"].includes(project.status) && (
+            <button
+              onClick={() => {
+                setEdit(null);
+                setShow(!show);
+              }}
+            >
+              {show ? "Close form" : "+ Assign resource"}
+            </button>
+          )}
       </div>
       <Notice error={error} />
+      {error && (
+        <button className="secondary" onClick={reload}>
+          Reload assignments
+        </button>
+      )}
       {show && (
         <AssignmentForm
           key={edit?.id || "new"}
@@ -38,10 +47,11 @@ export function Assignments({ project }: { project: Project }) {
             reload();
             setShow(false);
           }}
+          onCancel={() => setShow(false)}
         />
       )}
       {loading && <Loading />}
-      {data && (
+      {data && !loading && (
         <>
           {data.items.length ? (
             <div className="table-wrap">
@@ -57,9 +67,22 @@ export function Assignments({ project }: { project: Project }) {
                 </thead>
                 <tbody>
                   {data.items.map((a) => (
-                    <tr key={a.id}>
+                    <LinkedRow
+                      key={a.id}
+                      href={detailHref(
+                        "network",
+                        a.resourceId,
+                        `/projects/${project.id}`,
+                      )}
+                    >
                       <td>
-                        <Link href={`/network/${a.resourceId}`}>
+                        <Link
+                          href={detailHref(
+                            "network",
+                            a.resourceId,
+                            `/projects/${project.id}`,
+                          )}
+                        >
                           {a.resourceName}
                         </Link>
                       </td>
@@ -68,18 +91,24 @@ export function Assignments({ project }: { project: Project }) {
                       <td>{date(a.endDate) || "Ongoing"}</td>
                       {user.role === "Admin" && (
                         <td>
-                          <button
-                            className="text-button"
-                            onClick={() => {
-                              setEdit(a);
-                              setShow(true);
-                            }}
-                          >
-                            Edit assignment
-                          </button>
+                          <ActionsMenu
+                            label={`${a.resourceName}’s assignment`}
+                            actions={[
+                              {
+                                label: "Edit assignment",
+                                disabled: !["Planned", "Active"].includes(
+                                  project.status,
+                                ),
+                                onClick: () => {
+                                  setEdit(a);
+                                  setShow(true);
+                                },
+                              },
+                            ]}
+                          />
                         </td>
                       )}
-                    </tr>
+                    </LinkedRow>
                   ))}
                 </tbody>
               </table>
@@ -87,7 +116,7 @@ export function Assignments({ project }: { project: Project }) {
           ) : (
             <Empty>No resources assigned yet.</Empty>
           )}
-          <Pager data={data} onPage={setPage} />
+          <Pager data={data} onPage={setPage} label="Project team pagination" />
         </>
       )}
     </section>
@@ -97,13 +126,13 @@ function AssignmentForm({
   project,
   value,
   onSaved,
+  onCancel,
 }: {
   project: Project;
   value: Assignment | null;
   onSaved: () => void;
+  onCancel: () => void;
 }) {
-  const [q, setQ] = useState("");
-  const [search, setSearch] = useState("");
   const [resource, setResource] = useState(value?.resourceId || "");
   const [role, setRole] = useState(value?.roleDescription || "");
   const [start, setStart] = useState(
@@ -112,14 +141,12 @@ function AssignmentForm({
   const [end, setEnd] = useState(date(value?.endDate || project.endDate));
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
-  const { data, error: searchError } = useData<Page<Profile>>(
-    value ? null : `/resources?q=${encodeURIComponent(search)}`,
-  );
   return (
     <form
       className="stack"
       onSubmit={async (e) => {
         e.preventDefault();
+        if (busy) return;
         setBusy(true);
         setError("");
         try {
@@ -148,42 +175,14 @@ function AssignmentForm({
           : "Connect a resource to this project"}
       </h3>
       {!value && (
-        <>
-          <div className="filters">
-            <label>
-              Find resource
-              <input value={q} onChange={(e) => setQ(e.target.value)} />
-            </label>
-            <button
-              className="secondary"
-              type="button"
-              onClick={() => setSearch(q)}
-            >
-              Find
-            </button>
-          </div>
-          <label>
-            Resource
-            <select
-              required
-              aria-label="Resource"
-              aria-describedby="assignment-resource-help"
-              value={resource}
-              onChange={(e) => setResource(e.target.value)}
-            >
-              <option value="">Choose a resource</option>
-              {data?.items.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.name} · {p.headline}
-                </option>
-              ))}
-            </select>
-          </label>
-          <small id="assignment-resource-help">
-            Showing up to 20 matches. Refine the search to find a specific
-            person.
-          </small>
-        </>
+        <RecordFilter
+          kind="resources"
+          value={resource}
+          onChange={setResource}
+          label="Resource"
+          placeholder="Choose a resource"
+          required
+        />
       )}
       <label>
         Assignment role
@@ -216,9 +215,17 @@ function AssignmentForm({
           />
         </label>
       </div>
-      <Notice error={error || searchError} />
+      <Notice error={error} />
       <div>
         <button disabled={busy}>{busy ? "Saving…" : "Save assignment"}</button>
+        <button
+          type="button"
+          className="secondary"
+          disabled={busy}
+          onClick={onCancel}
+        >
+          Cancel
+        </button>
       </div>
     </form>
   );

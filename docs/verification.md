@@ -64,4 +64,6 @@ The browser tests deliberately keep older synthetic historical entries in the is
 
 ## Current verification limits
 
+The 2026-10-11 [dashboard redesign evidence](dashboard-redesign.md) records the current frontend/backend checks, expanded 13-test Chromium suite, dedicated test databases, independent reviews, and workflow-specific limits. Its results supersede the older dashboard test counts above; historical deployment, security and dependency-audit results are not claimed as newly rerun checks.
+
 No external production hosting, independent penetration test, load/SLA benchmark, restore rehearsal, real-device QR scan, exhaustive screen-reader audit, or remote CI execution is claimed. These operational/validation limits do not replace the required local build, migration, role, workflow and container gates.

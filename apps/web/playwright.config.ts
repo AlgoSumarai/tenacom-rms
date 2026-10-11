@@ -7,6 +7,7 @@ export default defineConfig({
   timeout: 240000,
   expect: { timeout: 20000 },
   use: {
+    actionTimeout: 20000,
     baseURL: process.env.E2E_BASE_URL || "http://localhost:3000",
     trace: "retain-on-failure",
     screenshot: "only-on-failure",

@@ -54,6 +54,14 @@ test("Manager manages password-free Resources and records hours without Admin pr
   await expect(
     page.getByRole("heading", { name: "Resource network", exact: true }),
   ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Add selected to Project" }),
+  ).toHaveCount(0);
+  await expect(
+    page.getByRole("checkbox", {
+      name: "Select active resources on this page",
+    }),
+  ).toHaveCount(0);
   await page
     .getByRole("link", { name: "People & access", exact: true })
     .click();
@@ -69,8 +77,14 @@ test("Manager manages password-free Resources and records hours without Admin pr
     .fill(`managed-${suffix}@example.test`);
   await expect(page.getByLabel("Initial password")).toHaveCount(0);
   await page.getByRole("button", { name: "Save person" }).click();
-  await page.getByLabel("Find a person").fill(suffix);
-  await page.getByRole("button", { name: "Search", exact: true }).click();
+  await page
+    .getByRole("form", { name: "Resources filters" })
+    .getByLabel("Find resource")
+    .fill(suffix);
+  await page
+    .getByRole("form", { name: "Resources filters" })
+    .getByRole("button", { name: "Search", exact: true })
+    .click();
   const row = page
     .getByRole("row")
     .filter({ hasText: `Managed resource ${suffix}` });
@@ -78,6 +92,13 @@ test("Manager manages password-free Resources and records hours without Admin pr
   await expect(row).toContainText("Profile only");
   const people = await page.request.get(`/api/resources?q=${suffix}`);
   const resource = (await people.json()).items[0];
+  await row
+    .getByRole("link", { name: `Managed resource ${suffix}`, exact: true })
+    .click();
+  await expect(
+    page.getByRole("region", { name: "Resource projects" }),
+  ).toContainText("An administrator can add this resource to a project.");
+  await page.getByRole("link", { name: "Back to list", exact: false }).click();
   const assignment = await request.post(
     `/api/projects/${project.id}/assignments`,
     {
@@ -92,10 +113,17 @@ test("Manager manages password-free Resources and records hours without Admin pr
     },
   );
   expect(assignment.status()).toBe(200);
-  await row.getByRole("button", { name: "Edit person" }).click();
-  await page.getByLabel("Active", { exact: true }).uncheck();
-  page.once("dialog", (dialog) => dialog.accept());
-  await page.getByRole("button", { name: "Save person" }).click();
+  await row
+    .getByRole("button", {
+      name: `Actions for Managed resource ${suffix}`,
+      exact: true,
+    })
+    .click();
+  await page.getByRole("button", { name: "Remove", exact: true }).click();
+  await page
+    .getByRole("dialog")
+    .getByRole("button", { name: "Deactivate person", exact: true })
+    .click();
   await expect(row).toContainText("Deactivated");
   expect(
     (

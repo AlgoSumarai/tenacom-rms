@@ -3,6 +3,7 @@ import { useState } from "react";
 import { api, date, hours, message, today } from "@/lib/api";
 import type { Assignment, HoursReport, Page, TimeEntry } from "@/lib/types";
 import { RecordFilter } from "./record-filter";
+import { ConfirmDialog } from "./entity-ui";
 import { Empty, Heading, Loading, Notice, Pager, useData } from "./ui";
 
 export function HoursScreen() {
@@ -12,8 +13,8 @@ export function HoursScreen() {
   const [resourceId, setResourceId] = useState("");
   const [projectId, setProjectId] = useState("");
   const [edit, setEdit] = useState<TimeEntry | null>(null);
+  const [removal, setRemoval] = useState<TimeEntry | null>(null);
   const [show, setShow] = useState(false);
-  const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const filters = new URLSearchParams(
     Object.fromEntries(
@@ -104,10 +105,17 @@ export function HoursScreen() {
           />
         </div>
       </details>
-      <Notice
-        error={error || entries.error || report.error}
-        success={success}
-      />
+      <Notice error={entries.error || report.error} success={success} />
+      {entries.error && (
+        <button className="secondary" onClick={entries.reload}>
+          Reload time entries
+        </button>
+      )}
+      {report.error && (
+        <button className="secondary" onClick={report.reload}>
+          Reload hours report
+        </button>
+      )}
       <section className="card">
         <h2>Hours by resource & project</h2>
         {report.data && !report.loading && (
@@ -197,26 +205,7 @@ export function HoursScreen() {
                           </button>
                           <button
                             className="text-button"
-                            onClick={async () => {
-                              if (
-                                !window.confirm(
-                                  "Remove this time entry? The change will be retained in the audit history.",
-                                )
-                              )
-                                return;
-                              try {
-                                setError("");
-                                await api(
-                                  `/time-entries/${t.id}?version=${t.version}`,
-                                  "DELETE",
-                                );
-                                entries.reload();
-                                report.reload();
-                                setSuccess("Time entry removed.");
-                              } catch (e) {
-                                setError(message(e));
-                              }
-                            }}
+                            onClick={() => setRemoval(t)}
                           >
                             Remove
                           </button>
@@ -235,6 +224,28 @@ export function HoursScreen() {
           </Empty>
         )}
       </section>
+      {removal && (
+        <ConfirmDialog
+          title="Remove time entry?"
+          confirmLabel="Remove entry"
+          onClose={() => setRemoval(null)}
+          onConfirm={async () => {
+            await api(
+              `/time-entries/${removal.id}?version=${removal.version}`,
+              "DELETE",
+            );
+            entries.reload();
+            report.reload();
+            setSuccess("Time entry removed.");
+          }}
+        >
+          <p>
+            Remove {hours(removal.minutes)} hours recorded for{" "}
+            {removal.resourceName} on {date(removal.workDate)}? This correction
+            remains in the audit history.
+          </p>
+        </ConfirmDialog>
+      )}
     </>
   );
 }

@@ -10,6 +10,7 @@ export async function api<T>(
   path: string,
   method = "GET",
   body?: unknown,
+  signal?: AbortSignal,
 ): Promise<T> {
   const response = await fetch(`/api${path}`, {
     method,
@@ -17,6 +18,7 @@ export async function api<T>(
     cache: "no-store",
     headers: { "Content-Type": "application/json", "X-Tenacom-Request": "1" },
     body: body === undefined ? undefined : JSON.stringify(body),
+    signal,
   });
   if (!response.ok) {
     const problem = await response.json().catch(() => null);

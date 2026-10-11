@@ -63,14 +63,18 @@ public sealed class AccountService(Database database, Actor actor, PasswordHashe
         await Audit(db, tx, actor.Id, "password.changed", actor.Id, null, ct);
         await tx.CommitAsync(ct);
     }
-    public async Task<Page<UserDto>> List(string? q, int page, CancellationToken ct)
+    public async Task<Page<UserDto>> List(string? q, int page, CancellationToken ct, string? kind = null, string? status = null, string? sort = null)
     {
         page = Math.Clamp(page, 1, 100000);
+        if (!string.IsNullOrEmpty(kind)) Rules.OneOf(kind, ["staff", "resources"], "person type");
+        if (!string.IsNullOrEmpty(status)) Rules.OneOf(status, ["active", "inactive"], "account status");
+        if (!string.IsNullOrEmpty(sort)) Rules.OneOf(sort, ["name", "email", "role"], "sort order");
         await using var db = await database.Open(ct);
-        const string where = " WHERE (@admin=1 OR Role='Resource') AND (@q='' OR Name LIKE @search OR Email LIKE @search)";
-        var args = new { admin = actor.Role == "Admin", q = Rules.Text(q, "Search", 100, false), search = $"%{q?.Trim()}%", offset = (page - 1) * 20 };
+        const string where = " WHERE (@admin=1 OR Role='Resource') AND (@kind='' OR (@kind='staff' AND Role IN ('Admin','Manager')) OR (@kind='resources' AND Role='Resource')) AND (@status='' OR (@status='active' AND Active=1) OR (@status='inactive' AND Active=0)) AND (@q='' OR Name LIKE @search OR Email LIKE @search)";
+        var args = new { admin = actor.Role == "Admin", kind = kind ?? "", status = status ?? "", q = Rules.Text(q, "Search", 100, false), search = $"%{q?.Trim()}%", offset = (page - 1) * 20 };
+        var order = sort switch { "email" => "Email,Id", "role" => "Role,Name,Id", _ => "Name,Id" };
         var count = await db.ExecuteScalarAsync<int>(Sql("SELECT COUNT(*) FROM Users" + where, args, ct: ct));
-        var rows = await db.QueryAsync<UserDto>(Sql("SELECT Id,Email,Name,Role,Active,Version FROM Users" + where + " ORDER BY Name,Id LIMIT 20 OFFSET @offset", args, ct: ct));
+        var rows = await db.QueryAsync<UserDto>(Sql("SELECT Id,Email,Name,Role,Active,Version FROM Users" + where + " ORDER BY " + order + " LIMIT 20 OFFSET @offset", args, ct: ct));
         return new(rows.ToList(), count, page, 20);
     }
     public async Task<string> Create(UserCreate request, CancellationToken ct)

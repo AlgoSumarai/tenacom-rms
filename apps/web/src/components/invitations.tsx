@@ -4,17 +4,22 @@ import Image from "next/image";
 import QRCode from "qrcode";
 import { api, date, message } from "@/lib/api";
 import type { Invitation, Term } from "@/lib/types";
-import { Badge, Heading, Notice, useData } from "./ui";
+import { Badge, Empty, Heading, Loading, Notice, useData } from "./ui";
+import { ConfirmDialog } from "./entity-ui";
+import { useFeedback } from "./feedback";
 export function Invitations() {
   const {
     data,
     error: loadError,
+    loading,
     reload,
   } = useData<Invitation[]>("/invitations");
   const [error, setError] = useState("");
   const [url, setUrl] = useState("");
   const [qr, setQr] = useState("");
   const [busy, setBusy] = useState(false);
+  const [revoking, setRevoking] = useState<Invitation | null>(null);
+  const notify = useFeedback();
   return (
     <>
       <Heading eyebrow="Grow the network" title="A simple introduction" />
@@ -133,67 +138,85 @@ export function Invitations() {
       )}
       <section className="card">
         <h2>Recent invitations</h2>
-        <div className="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>Label</th>
-                <th>Expires</th>
-                <th>Registrations</th>
-                <th>Status</th>
-                <th>Manage</th>
-              </tr>
-            </thead>
-            <tbody>
-              {data?.map((i) => (
-                <tr key={i.id}>
-                  <td>{i.label}</td>
-                  <td>{date(i.expiresAt)}</td>
-                  <td>
-                    {i.uses} / {i.maxUses}
-                  </td>
-                  <td>
-                    <Badge>
-                      {i.revoked
-                        ? "Revoked"
-                        : new Date(i.expiresAt + "Z") < new Date()
-                          ? "Expired"
-                          : i.uses >= i.maxUses
-                            ? "Used up"
-                            : "Active"}
-                    </Badge>
-                  </td>
-                  <td>
-                    {!i.revoked && (
-                      <button
-                        className="text-button"
-                        onClick={async () => {
-                          if (
-                            !window.confirm(
-                              "Revoke this invitation? Its QR code and link will stop accepting registrations.",
-                            )
-                          )
-                            return;
-                          try {
-                            await api(`/invitations/${i.id}`, "DELETE");
-                            reload();
-                          } catch (e) {
-                            setError(message(e));
-                          }
-                        }}
-                      >
-                        Revoke
-                      </button>
-                    )}
-                  </td>
+        {loading && <Loading />}
+        {loadError && (
+          <button className="secondary" onClick={reload}>
+            Reload invitations
+          </button>
+        )}
+        {!loading && data?.length === 0 && (
+          <Empty>
+            No invitations yet. Create a link above to invite your first
+            resource.
+          </Empty>
+        )}
+        {!!data?.length && (
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Label</th>
+                  <th>Expires</th>
+                  <th>Registrations</th>
+                  <th>Status</th>
+                  <th>Manage</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody>
+                {data?.map((i) => (
+                  <tr key={i.id}>
+                    <td>{i.label}</td>
+                    <td>{date(i.expiresAt)}</td>
+                    <td>
+                      {i.uses} / {i.maxUses}
+                    </td>
+                    <td>
+                      <Badge>
+                        {i.revoked
+                          ? "Revoked"
+                          : new Date(i.expiresAt + "Z") < new Date()
+                            ? "Expired"
+                            : i.uses >= i.maxUses
+                              ? "Used up"
+                              : "Active"}
+                      </Badge>
+                    </td>
+                    <td>
+                      {!i.revoked && (
+                        <button
+                          className="text-button"
+                          onClick={() => setRevoking(i)}
+                        >
+                          Revoke
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
         <small>Showing the 100 most recent invitations.</small>
       </section>
       <Taxonomy />
+      {revoking && (
+        <ConfirmDialog
+          title="Revoke invitation?"
+          confirmLabel="Revoke invitation"
+          onClose={() => setRevoking(null)}
+          onConfirm={async () => {
+            await api(`/invitations/${revoking.id}`, "DELETE");
+            reload();
+            notify(`Invitation ${revoking.label} revoked.`);
+          }}
+        >
+          <p>
+            The link and QR code for {revoking.label} will stop accepting new
+            submissions. Existing resource profiles remain available.
+          </p>
+        </ConfirmDialog>
+      )}
     </>
   );
 }

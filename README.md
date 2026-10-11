@@ -8,12 +8,12 @@ Prerequisites: Docker Desktop/Engine with Compose v2 or later. Local development
 
 1. Run `./scripts/New-LocalEnvironment.ps1`, or copy `.env.example` to `.env` and replace both database passwords with different random values. Never commit `.env`.
 2. Run `docker compose up --build -d`. MySQL becomes healthy, the migration job completes, then API and frontend start.
-3. Run `./scripts/Bootstrap-Admin.ps1 -Email you@example.com`. Enter a strong password at the hidden prompt. This explicit operation only works while the user table is empty. There are no default credentials.
+3. On Linux/Ubuntu, run `bash scripts/Bootstrap-Admin.sh` and enter your email. On Windows, run `./scripts/Bootstrap-Admin.ps1 -Email you@example.com`. Enter a strong password at the hidden prompt. This explicit operation only works while the user table is empty. There are no default credentials.
 4. Open http://localhost:3000 and sign in. Create an invitation, download its QR code, or create staff accounts under **People & access**.
 
 The browser is the only published service. MySQL data persists in the `mysql-data` volume. `docker compose down` stops the stack without deleting data. Do not use `down -v` on a database whose records you need to retain.
 
-For a non-PowerShell bootstrap, export `BOOTSTRAP_EMAIL` and `BOOTSTRAP_PASSWORD` through your shell's secure secret input, then run `docker compose run --rm -e BOOTSTRAP_EMAIL -e BOOTSTRAP_PASSWORD api --bootstrap`. Unset both variables afterwards. Do not place passwords directly in command history.
+The Bash bootstrap script also accepts an email argument: `bash scripts/Bootstrap-Admin.sh you@example.com`. It prompts for and confirms the password, then removes the credentials from its environment when it exits. Start the Docker stack before running it. Do not place passwords directly in command history.
 
 ## Develop locally
 

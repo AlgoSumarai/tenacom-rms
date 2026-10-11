@@ -7,11 +7,11 @@ namespace Tenacom.Api.Application;
 
 public sealed class ProjectService(Database database, Actor actor)
 {
-    public async Task<Page<ProjectDto>> List(string? q, int page, CancellationToken ct)
+    public async Task<Page<ProjectDto>> List(string? q, int page, CancellationToken ct, bool eligible = false)
     {
         page = Math.Clamp(page, 1, 100000);
-        var args = new { staff = actor.Staff, actor.Id, q = Rules.Text(q, "Search", 100, false), search = $"%{q?.Trim()}%", offset = (page - 1) * 20 };
-        const string where = " WHERE (@staff=1 OR EXISTS(SELECT 1 FROM Assignments a WHERE a.ProjectId=p.Id AND a.ResourceId=@Id)) AND (@q='' OR p.Name LIKE @search OR p.Code LIKE @search)";
+        var args = new { staff = actor.Staff, actor.Id, eligible, q = Rules.Text(q, "Search", 100, false), search = $"%{q?.Trim()}%", offset = (page - 1) * 20 };
+        const string where = " WHERE (@staff=1 OR EXISTS(SELECT 1 FROM Assignments a WHERE a.ProjectId=p.Id AND a.ResourceId=@Id)) AND (@eligible=0 OR p.Status IN ('Planned','Active')) AND (@q='' OR p.Name LIKE @search OR p.Code LIKE @search)";
         await using var db = await database.Open(ct);
         var total = await db.ExecuteScalarAsync<int>(Sql("SELECT COUNT(*) FROM Projects p" + where, args, ct: ct));
         var rows = await db.QueryAsync<ProjectDto>(Sql("SELECT p.Id,p.Code,p.Name,p.Description,p.Status,p.StartDate,p.EndDate,p.Version FROM Projects p" + where + " ORDER BY p.UpdatedAt DESC,p.Id LIMIT 20 OFFSET @offset", args, ct: ct));

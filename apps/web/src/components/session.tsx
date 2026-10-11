@@ -1,11 +1,13 @@
 "use client";
-import { createContext, useContext, useState } from "react";
+import { createContext, useContext, useState, Suspense } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { api, message } from "@/lib/api";
 import type { User } from "@/lib/types";
 import { useData, Loading, Notice } from "./ui";
 import { BrandLogo } from "./brand-logo";
+import { ResourceSelectionProvider } from "./resource-selection";
+import { FeedbackProvider } from "./feedback";
 
 const Session = createContext<User | null>(null);
 export function useUser() {
@@ -87,7 +89,11 @@ export function Workspace({ children }: { children: React.ReactNode }) {
           </header>
           <main id="main" className="main-content">
             <Notice error={signOutError} />
-            {children}
+            <ResourceSelectionProvider>
+              <FeedbackProvider>
+                <Suspense fallback={<Loading />}>{children}</Suspense>
+              </FeedbackProvider>
+            </ResourceSelectionProvider>
           </main>
           <footer className="app-footer">
             TENACOM <span>People. Expertise. Possibility.</span>

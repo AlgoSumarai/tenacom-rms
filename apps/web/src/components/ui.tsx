@@ -4,27 +4,28 @@ import { api, ApiError, message } from "@/lib/api";
 import type { Page } from "@/lib/types";
 
 export function useData<T>(path: string | null) {
-  const [data, setData] = useState<T | null>(null);
+  const [result, setResult] = useState<{ path: string; value: T } | null>(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
   const [revision, setRevision] = useState(0);
   const reload = useCallback(() => setRevision((x) => x + 1), []);
   useEffect(() => {
     let current = true;
+    const controller = new AbortController();
     if (!path) return;
     setLoading(true);
     setError("");
-    api<T>(path)
+    api<T>(path, "GET", undefined, controller.signal)
       .then((value) => {
         if (current) {
-          setData(value);
+          setResult({ path, value });
           setError("");
         }
       })
       .catch((e) => {
         if (current) {
           setError(message(e));
-          setData(null);
+          setResult(null);
           if (e instanceof ApiError && e.status === 401)
             window.location.assign("/login");
         }
@@ -34,9 +35,16 @@ export function useData<T>(path: string | null) {
       });
     return () => {
       current = false;
+      controller.abort();
     };
   }, [path, revision]);
-  return { data, error, loading, reload };
+  const data = path && result?.path === path ? result.value : null;
+  return {
+    data,
+    error,
+    loading: !!path && (loading || (!data && !error)),
+    reload,
+  };
 }
 export function Notice({
   error,
@@ -92,26 +100,32 @@ export function Loading() {
 export function Pager<T>({
   data,
   onPage,
+  label = "Pagination",
+  disabled = false,
 }: {
   data: Page<T>;
   onPage: (page: number) => void;
+  label?: string;
+  disabled?: boolean;
 }) {
   return (
-    <nav className="pager" aria-label="Pagination">
+    <nav className="pager" aria-label={label}>
       <span>
         {data.total} results · Page {data.pageNumber} of{" "}
         {Math.max(1, Math.ceil(data.total / data.pageSize))}
       </span>
       <button
+        type="button"
         className="secondary"
-        disabled={data.pageNumber <= 1}
+        disabled={disabled || data.pageNumber <= 1}
         onClick={() => onPage(data.pageNumber - 1)}
       >
         Previous
       </button>
       <button
+        type="button"
         className="secondary"
-        disabled={data.pageNumber * data.pageSize >= data.total}
+        disabled={disabled || data.pageNumber * data.pageSize >= data.total}
         onClick={() => onPage(data.pageNumber + 1)}
       >
         Next

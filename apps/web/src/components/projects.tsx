@@ -6,6 +6,9 @@ import type { Page, Project } from "@/lib/types";
 import { useUser } from "./session";
 import { Badge, Empty, Heading, Loading, Notice, Pager, useData } from "./ui";
 import { Assignments } from "./assignments";
+import { ActionsMenu, Breadcrumbs, ConfirmDialog } from "./entity-ui";
+import { returnPath, useListQuery } from "./list-state";
+import { useFeedback } from "./feedback";
 
 const emptyProject: Project = {
   id: "",
@@ -19,9 +22,11 @@ const emptyProject: Project = {
 };
 export function Projects() {
   const user = useUser();
-  const [page, setPage] = useState(1);
-  const [q, setQ] = useState("");
-  const [search, setSearch] = useState("");
+  const notify = useFeedback();
+  const { params, update, href } = useListQuery();
+  const page = Math.max(1, Number(params.get("page")) || 1);
+  const [q, setQ] = useState(params.get("q") || "");
+  const search = params.get("q") || "";
   const [create, setCreate] = useState(false);
   const { data, error, loading, reload } = useData<Page<Project>>(
     `/projects?q=${encodeURIComponent(search)}&page=${page}`,
@@ -41,6 +46,7 @@ export function Projects() {
           onSaved={() => {
             reload();
             setCreate(false);
+            notify("Project created.");
           }}
         />
       )}
@@ -48,8 +54,7 @@ export function Projects() {
         className="card filters"
         onSubmit={(e) => {
           e.preventDefault();
-          setSearch(q);
-          setPage(1);
+          update({ q, page: 1 });
         }}
       >
         <label>
@@ -62,10 +67,25 @@ export function Projects() {
           />
         </label>
         <button>Search</button>
+        <button
+          type="button"
+          className="secondary"
+          onClick={() => {
+            setQ("");
+            update({ q: "", page: 1 });
+          }}
+        >
+          Clear filters
+        </button>
       </form>
       <Notice error={error} />
+      {error && (
+        <button className="secondary" onClick={reload}>
+          Reload projects
+        </button>
+      )}
       {loading && <Loading />}
-      {data && (
+      {data && !loading && (
         <>
           {data.items.length ? (
             <div className="grid">
@@ -83,7 +103,10 @@ export function Projects() {
                   <small>
                     {date(p.startDate)} – {date(p.endDate) || "Open ended"}
                   </small>
-                  <Link className="card-link" href={`/projects/${p.id}`}>
+                  <Link
+                    className="card-link"
+                    href={`/projects/${p.id}?from=${encodeURIComponent(href)}`}
+                  >
                     Open project <span>↗</span>
                   </Link>
                 </article>
@@ -92,7 +115,11 @@ export function Projects() {
           ) : (
             <Empty>No projects to show yet.</Empty>
           )}
-          <Pager data={data} onPage={setPage} />
+          <Pager
+            data={data}
+            onPage={(page) => update({ page })}
+            label="Projects pagination"
+          />
         </>
       )}
     </>
@@ -100,27 +127,45 @@ export function Projects() {
 }
 export function ProjectDetail({ id }: { id: string }) {
   const user = useUser();
+  const notify = useFeedback();
+  const { params } = useListQuery();
+  const back = returnPath(params.get("from"), "/projects");
   const { data, error, reload } = useData<Project>(`/projects/${id}`);
   const [edit, setEdit] = useState(false);
   if (!data)
     return (
       <>
+        <Link href={back}>← Projects</Link>
         {!error && <Loading />}
         <Notice error={error} />
+        {error && (
+          <button className="secondary" onClick={reload}>
+            Retry
+          </button>
+        )}
       </>
     );
   return (
     <>
+      <Breadcrumbs
+        items={[{ label: "Projects", href: back }, { label: data.name }]}
+      />
       <Heading eyebrow={data.code} title={data.name}>
-        <Link href="/projects">← Projects</Link>
+        <Link href={back}>← Projects</Link>
       </Heading>
       <div className="card">
         <div className="row between">
           <Badge>{data.status}</Badge>
           {user.role === "Admin" && (
-            <button className="secondary" onClick={() => setEdit(!edit)}>
-              {edit ? "Close editor" : "Edit project"}
-            </button>
+            <ActionsMenu
+              label={data.name}
+              actions={[
+                {
+                  label: edit ? "Close editor" : "Edit",
+                  onClick: () => setEdit(!edit),
+                },
+              ]}
+            />
           )}
         </div>
         <p>{data.description}</p>
@@ -135,7 +180,9 @@ export function ProjectDetail({ id }: { id: string }) {
           onSaved={() => {
             reload();
             setEdit(false);
+            notify("Project saved.");
           }}
+          onCancel={() => setEdit(false)}
         />
       )}
       <Assignments project={data} />
@@ -145,40 +192,50 @@ export function ProjectDetail({ id }: { id: string }) {
 function ProjectForm({
   value,
   onSaved,
+  onCancel,
 }: {
   value: Project;
   onSaved: () => void;
+  onCancel?: () => void;
 }) {
   const [p, setP] = useState(value);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [confirmArchive, setConfirmArchive] = useState(false);
+  const save = async () => {
+    if (busy) return;
+    setBusy(true);
+    setError("");
+    try {
+      await api(`/projects${p.id ? `/${p.id}` : ""}`, p.id ? "PUT" : "POST", {
+        ...p,
+        startDate: date(p.startDate),
+        endDate: date(p.endDate) || null,
+      });
+      onSaved();
+    } finally {
+      setBusy(false);
+    }
+  };
   return (
     <form
       className="card stack"
       onSubmit={async (e) => {
         e.preventDefault();
-        setBusy(true);
-        setError("");
+        if (busy) return;
+        if (p.id && p.status === "Archived" && value.status !== "Archived") {
+          setConfirmArchive(true);
+          return;
+        }
         try {
-          await api(
-            `/projects${p.id ? `/${p.id}` : ""}`,
-            p.id ? "PUT" : "POST",
-            {
-              ...p,
-              startDate: date(p.startDate),
-              endDate: date(p.endDate) || null,
-            },
-          );
-          onSaved();
+          await save();
         } catch (e) {
           setError(message(e));
-        } finally {
-          setBusy(false);
         }
       }}
     >
       <h2>{p.id ? "Edit project" : "A new project"}</h2>
-      <div className="form-grid">
+      <fieldset className="form-grid" disabled={busy}>
         <label>
           Project code
           <input
@@ -227,6 +284,7 @@ function ProjectForm({
         <label>
           Status
           <select
+            aria-label="Status"
             value={p.status}
             onChange={(e) => setP({ ...p, status: e.target.value })}
           >
@@ -235,11 +293,34 @@ function ProjectForm({
             ))}
           </select>
         </label>
-      </div>
+      </fieldset>
       <Notice error={error} />
       <div>
         <button disabled={busy}>{busy ? "Saving…" : "Save project"}</button>
+        {onCancel && (
+          <button
+            type="button"
+            className="secondary"
+            disabled={busy}
+            onClick={onCancel}
+          >
+            Cancel
+          </button>
+        )}
       </div>
+      {confirmArchive && (
+        <ConfirmDialog
+          title="Archive project?"
+          confirmLabel="Archive project"
+          onConfirm={save}
+          onClose={() => setConfirmArchive(false)}
+        >
+          <p>
+            Its team and recorded hours will be retained, and assignment changes
+            will stop.
+          </p>
+        </ConfirmDialog>
+      )}
     </form>
   );
 }

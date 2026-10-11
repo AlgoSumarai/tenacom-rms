@@ -25,7 +25,7 @@ public static class Endpoints
         api.MapPost("/onboarding", async (RegisterRequest r, InvitationService s, CancellationToken ct) => { var id = await s.Register(r, ct); return Results.Created($"/api/resources/{id}", new { id }); }).AllowAnonymous().RequireRateLimiting("auth");
         api.MapGet("/terms", (ProfileService s, CancellationToken ct) => s.Terms(ct)).AllowAnonymous().RequireRateLimiting("public");
         api.MapPost("/terms", async (TermCreate r, ProfileService s, CancellationToken ct) => Results.Ok(await s.AddTerm(r, ct))).RequireAuthorization("Staff");
-        api.MapGet("/users", (string? q, int? page, AccountService s, CancellationToken ct) => s.List(q, page ?? 1, ct)).RequireAuthorization("Staff");
+        api.MapGet("/users", (string? q, string? kind, string? status, string? sort, int? page, AccountService s, CancellationToken ct) => s.List(q, page ?? 1, ct, kind, status, sort)).RequireAuthorization("Staff");
         api.MapGet("/users/{id:guid}", (Guid id, AccountService s, CancellationToken ct) => s.Get(id.ToString(), ct)).RequireAuthorization("Staff");
         api.MapPost("/users", async (UserCreate r, AccountService s, CancellationToken ct) => { var id = await s.Create(r, ct); return Results.Created($"/api/users/{id}", new { id }); }).RequireAuthorization("Staff");
         api.MapPut("/users/{id:guid}", async (Guid id, UserUpdate r, AccountService s, CancellationToken ct) => { await s.Update(id.ToString(), r, ct); return Results.NoContent(); }).RequireAuthorization("Staff");
@@ -36,7 +36,7 @@ public static class Endpoints
         api.MapGet("/invitations", (InvitationService s, CancellationToken ct) => s.List(ct)).RequireAuthorization("Staff");
         api.MapPost("/invitations", (InvitationCreate r, InvitationService s, CancellationToken ct) => s.Create(r, ct)).RequireAuthorization("Staff");
         api.MapDelete("/invitations/{id:guid}", async (Guid id, InvitationService s, CancellationToken ct) => { await s.Revoke(id.ToString(), ct); return Results.NoContent(); }).RequireAuthorization("Staff");
-        api.MapGet("/projects", (string? q, int? page, ProjectService s, CancellationToken ct) => s.List(q, page ?? 1, ct));
+        api.MapGet("/projects", (string? q, bool? eligible, int? page, ProjectService s, CancellationToken ct) => s.List(q, page ?? 1, ct, eligible ?? false));
         api.MapGet("/projects/{id:guid}", (Guid id, ProjectService s, CancellationToken ct) => s.Get(id.ToString(), ct));
         api.MapPost("/projects", async (ProjectWrite r, ProjectService s, CancellationToken ct) => { var id = await s.Save(null, r, ct); return Results.Created($"/api/projects/{id}", new { id }); }).RequireAuthorization("Admin");
         api.MapPut("/projects/{id:guid}", async (Guid id, ProjectWrite r, ProjectService s, CancellationToken ct) => { await s.Save(id.ToString(), r, ct); return Results.NoContent(); }).RequireAuthorization("Admin");

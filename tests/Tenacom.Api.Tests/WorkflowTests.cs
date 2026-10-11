@@ -16,6 +16,68 @@ namespace Tenacom.Api.Tests;
 public sealed class WorkflowTests
 {
     [Fact]
+    public async Task DashboardListsStaySeparatedAndAssignmentsEnforceEligibility()
+    {
+        var connection = Environment.GetEnvironmentVariable("TEST_DATABASE") ?? throw new InvalidOperationException("Set TEST_DATABASE to a dedicated MySQL test database.");
+        await using var factory = new TestApp(connection);
+        using var scope = factory.Services.CreateScope();
+        var database = scope.ServiceProvider.GetRequiredService<Database>();
+        await database.Migrate(default);
+        var suffix = Guid.NewGuid().ToString("N")[..10];
+        var password = Tokens.Create();
+        var accounts = scope.ServiceProvider.GetRequiredService<AccountService>();
+        await using var db = await database.Open(default);
+        await using (var tx = await db.BeginTransactionAsync())
+        {
+            await accounts.Insert(db, tx, new($"dashboard-admin-{suffix}@example.test", $"Dashboard {suffix} Admin", "Admin", password), default);
+            await accounts.Insert(db, tx, new($"dashboard-manager-{suffix}@example.test", $"Dashboard {suffix} Manager", "Manager", password), default);
+            for (var i = 0; i < 22; i++)
+                await accounts.Insert(db, tx, new($"dashboard-{suffix}-{i:D2}@example.test", $"Dashboard {suffix} Resource {i:D2}", "Resource"), default);
+            await tx.CommitAsync();
+        }
+        using var admin = Client(factory);
+        using var manager = Client(factory);
+        await Login(admin, $"dashboard-admin-{suffix}@example.test", password);
+        await Login(manager, $"dashboard-manager-{suffix}@example.test", password);
+        var staff = (await admin.GetFromJsonAsync<Page<UserDto>>($"/api/users?kind=staff&q={suffix}&sort=role"))!;
+        Assert.Equal(2, staff.Total);
+        Assert.All(staff.Items, x => Assert.Contains(x.Role, new[] { "Admin", "Manager" }));
+        var resources = (await admin.GetFromJsonAsync<Page<UserDto>>($"/api/users?kind=resources&q={suffix}&sort=email"))!;
+        Assert.Equal(22, resources.Total);
+        Assert.Equal(20, resources.Items.Count);
+        Assert.All(resources.Items, x => Assert.Equal("Resource", x.Role));
+        var secondPage = (await admin.GetFromJsonAsync<Page<UserDto>>($"/api/users?kind=resources&q={suffix}&sort=email&page=2"))!;
+        Assert.Equal(2, secondPage.Items.Count);
+        Assert.Empty(resources.Items.Select(x => x.Id).Intersect(secondPage.Items.Select(x => x.Id)));
+        Assert.Empty((await manager.GetFromJsonAsync<Page<UserDto>>($"/api/users?kind=staff&q={suffix}"))!.Items);
+        Assert.Equal(HttpStatusCode.BadRequest, (await admin.GetAsync("/api/users?sort=Name;DROP")).StatusCode);
+        Assert.Equal(HttpStatusCode.BadRequest, (await admin.GetAsync("/api/users?kind=unknown")).StatusCode);
+        Assert.Equal(HttpStatusCode.BadRequest, (await admin.GetAsync("/api/users?status=unknown")).StatusCode);
+        var person = resources.Items[0];
+        await SendNoContent(admin, HttpMethod.Put, $"/api/users/{person.Id}", new UserUpdate(person.Email, person.Name, person.Role, false, person.Version));
+        Assert.Equal(person.Id, Assert.Single((await admin.GetFromJsonAsync<Page<UserDto>>($"/api/users?kind=resources&q={suffix}&status=inactive"))!.Items).Id);
+        Assert.Equal(21, (await manager.GetFromJsonAsync<Page<UserDto>>($"/api/users?kind=resources&q={suffix}&status=active"))!.Total);
+        var project = new ProjectWrite($"D-{suffix}", $"Dashboard {suffix} project", "", "Active", new(2026, 1, 1), new(2026, 12, 31), 0);
+        var projectId = (await Send<JsonElement>(admin, HttpMethod.Post, "/api/projects", project)).GetProperty("id").GetString()!;
+        foreach (var status in new[] { "Planned", "Completed", "Archived" })
+            await Send<JsonElement>(admin, HttpMethod.Post, "/api/projects", project with { Code = $"{status[..1]}-{suffix}", Status = status });
+        var eligible = (await admin.GetFromJsonAsync<Page<ProjectDto>>($"/api/projects?q={suffix}&eligible=true"))!;
+        Assert.Equal(2, eligible.Total);
+        Assert.All(eligible.Items, x => Assert.Contains(x.Status, new[] { "Planned", "Active" }));
+        var assignment = new AssignmentWrite(resources.Items[1].Id, "Engineer", new(2026, 2, 1), new(2026, 2, 28), 0);
+        Assert.Equal(HttpStatusCode.Forbidden, (await manager.PostAsJsonAsync($"/api/projects/{projectId}/assignments", assignment)).StatusCode);
+        Assert.Equal(HttpStatusCode.BadRequest, (await admin.PostAsJsonAsync($"/api/projects/{projectId}/assignments", assignment with { ResourceId = person.Id })).StatusCode);
+        Assert.Equal(HttpStatusCode.BadRequest, (await admin.PostAsJsonAsync($"/api/projects/{projectId}/assignments", assignment with { ResourceId = staff.Items[0].Id })).StatusCode);
+        Assert.Equal(HttpStatusCode.BadRequest, (await admin.PostAsJsonAsync($"/api/projects/{projectId}/assignments", assignment with { StartDate = new(2025, 12, 31) })).StatusCode);
+        var simultaneous = await Task.WhenAll(admin.PostAsJsonAsync($"/api/projects/{projectId}/assignments", assignment), admin.PostAsJsonAsync($"/api/projects/{projectId}/assignments", assignment));
+        Assert.Single(simultaneous, x => x.IsSuccessStatusCode);
+        Assert.Single(simultaneous, x => x.StatusCode == HttpStatusCode.BadRequest);
+        Assert.Equal(1, (await admin.GetFromJsonAsync<Page<AssignmentDto>>($"/api/assignments?projectId={projectId}"))!.Total);
+        await Send<JsonElement>(admin, HttpMethod.Post, $"/api/projects/{projectId}/assignments", assignment with { StartDate = new(2026, 3, 1), EndDate = new(2026, 3, 31) });
+        Assert.Equal(2, (await admin.GetFromJsonAsync<Page<AssignmentDto>>($"/api/assignments?resourceId={assignment.ResourceId}&projectId={projectId}"))!.Total);
+    }
+
+    [Fact]
     public async Task CompleteWorkflowEnforcesDatabaseRulesAndRoleBoundaries()
     {
         var connection = Environment.GetEnvironmentVariable("TEST_DATABASE")

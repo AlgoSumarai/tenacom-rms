@@ -157,17 +157,23 @@ test("password-free mobile submission, staff profile management, assignment and 
   await page.getByLabel("Search the network").fill(suffix);
   await page.getByRole("button", { name: "Search", exact: true }).click();
   await expect(
-    page.getByRole("heading", { name: `Professional ${suffix}`, exact: true }),
+    page.getByRole("link", { name: `Professional ${suffix}`, exact: true }),
   ).toBeVisible();
   await page.screenshot({
     path: "test-results/desktop-network.png",
     fullPage: true,
   });
   await page
-    .getByRole("article")
-    .filter({ hasText: `Professional ${suffix}` })
-    .getByRole("link", { name: "View profile" })
+    .getByRole("link", { name: `Professional ${suffix}`, exact: true })
     .click();
+  await expect(page.getByLabel("A little about your work")).toHaveCount(0);
+  await page
+    .getByRole("button", {
+      name: `Actions for Professional ${suffix}`,
+      exact: true,
+    })
+    .click();
+  await page.getByRole("link", { name: "Edit", exact: true }).click();
   await page
     .getByLabel("A little about your work")
     .fill("I build reliable connected systems across industries.");
@@ -191,7 +197,9 @@ test("password-free mobile submission, staff profile management, assignment and 
     .click();
   await page.getByRole("button", { name: "Assign resource" }).click();
   await page.getByLabel("Find resource", { exact: true }).fill(suffix);
-  await page.getByRole("button", { name: "Find", exact: true }).click();
+  await page
+    .getByRole("button", { name: "Find resource", exact: true })
+    .click();
   const resourceOption = page
     .getByLabel("Resource", { exact: true })
     .getByRole("option", { name: new RegExp(suffix) });

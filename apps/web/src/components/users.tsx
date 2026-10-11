@@ -1,240 +1,235 @@
 "use client";
 import { useState } from "react";
-import { api, message } from "@/lib/api";
-import type { Page, Role, User } from "@/lib/types";
+import Link from "next/link";
+import type { Page, User } from "@/lib/types";
 import { useUser } from "./session";
-import { Badge, Heading, Loading, Notice, Pager, useData } from "./ui";
+import { Badge, Empty, Heading, Loading, Notice, Pager, useData } from "./ui";
+import { UserForm } from "./user-form";
+import { LinkedRow } from "./entity-ui";
+import { PersonActions } from "./person-actions";
+import { detailHref, useListQuery } from "./list-state";
+
 export function Users() {
-  const [q, setQ] = useState("");
-  const [search, setSearch] = useState("");
-  const [page, setPage] = useState(1);
+  const actor = useUser();
   const [show, setShow] = useState(false);
-  const [edit, setEdit] = useState<User | null>(null);
-  const { data, error, loading, reload } = useData<Page<User>>(
-    `/users?q=${encodeURIComponent(search)}&page=${page}`,
-  );
+  const [revision, setRevision] = useState(0);
+  const [success, setSuccess] = useState("");
   return (
     <>
       <Heading eyebrow="People & access" title="Manage people & access">
-        <button
-          onClick={() => {
-            setEdit(null);
-            setShow(!show);
-          }}
-        >
+        <button onClick={() => setShow(!show)}>
           {show ? "Close form" : "+ Create person"}
         </button>
       </Heading>
+      <p className="page-intro">
+        Staff accounts sign in to manage the workspace. Resources have
+        professional profiles and project history, without sign-in access.
+      </p>
       {show && (
         <UserForm
-          key={edit?.id || "new"}
-          value={edit}
+          value={null}
+          onCancel={() => setShow(false)}
           onSaved={() => {
-            reload();
             setShow(false);
+            setRevision((x) => x + 1);
+            setSuccess("Person created.");
           }}
         />
       )}
-      <form
-        className="card filters"
-        onSubmit={(e) => {
-          e.preventDefault();
-          setSearch(q);
-          setPage(1);
-        }}
-      >
-        <label>
-          Find a person
-          <input
-            type="search"
-            value={q}
-            onChange={(e) => setQ(e.target.value)}
-            placeholder="Name or email address"
-          />
-        </label>
-        <button>Search</button>
-      </form>
-      <Notice error={error} />
-      {loading && <Loading />}
-      {data && (
-        <div className="card">
-          <div className="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>Name</th>
-                  <th>Email</th>
-                  <th>Role</th>
-                  <th>Status</th>
-                  <th>Access</th>
-                  <th>Manage</th>
-                </tr>
-              </thead>
-              <tbody>
-                {data.items.map((u) => (
-                  <tr key={u.id}>
-                    <td>{u.name}</td>
-                    <td>{u.email}</td>
-                    <td>{u.role}</td>
-                    <td>
-                      <Badge>{u.active ? "Active" : "Deactivated"}</Badge>
-                    </td>
-                    <td>
-                      {u.role === "Resource" ? "Profile only" : "Staff sign-in"}
-                    </td>
-                    <td>
-                      <button
-                        className="text-button"
-                        onClick={() => {
-                          setEdit(u);
-                          setShow(true);
-                        }}
-                      >
-                        Edit person
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-          <Pager data={data} onPage={setPage} />
-        </div>
+      <Notice success={success} />
+      {actor.role === "Admin" ? (
+        <PeopleTable kind="staff" revision={revision} />
+      ) : (
+        <section className="card" aria-label="Staff accounts">
+          <h2>Staff accounts</h2>
+          <p className="muted">
+            Administrators manage staff accounts and sign-in access.
+          </p>
+        </section>
       )}
+      <PeopleTable kind="resources" revision={revision} />
     </>
   );
 }
-function UserForm({
-  value,
-  onSaved,
+function PeopleTable({
+  kind,
+  revision,
 }: {
-  value: User | null;
-  onSaved: () => void;
+  kind: "staff" | "resources";
+  revision: number;
 }) {
-  const actor = useUser();
-  const [name, setName] = useState(value?.name || "");
-  const [email, setEmail] = useState(value?.email || "");
-  const [role, setRole] = useState<Role>(value?.role || "Resource");
-  const [active, setActive] = useState(value?.active ?? true);
-  const [password, setPassword] = useState("");
-  const [error, setError] = useState("");
-  const [busy, setBusy] = useState(false);
+  const { params, update, href } = useListQuery();
+  const key = (field: string) => `${kind}_${field}`;
+  const [query, setQuery] = useState(params.get(key("q")) || "");
+  const page = Math.max(1, Number(params.get(key("page"))) || 1);
+  const title = kind === "staff" ? "Staff accounts" : "Resources";
+  const request = new URLSearchParams({
+    kind,
+    q: params.get(key("q")) || "",
+    status: params.get(key("status")) || "",
+    sort: params.get(key("sort")) || "name",
+    page: String(page),
+    revision: String(revision),
+  });
+  const { data, error, loading, reload } = useData<Page<User>>(
+    `/users?${request}`,
+  );
+  const clear = () => {
+    setQuery("");
+    update({
+      [key("q")]: "",
+      [key("status")]: "",
+      [key("sort")]: "",
+      [key("page")]: 1,
+    });
+  };
   return (
-    <form
-      className="card stack"
-      onSubmit={async (e) => {
-        e.preventDefault();
-        if (
-          value?.active &&
-          !active &&
-          !window.confirm(
-            value.role === "Resource"
-              ? "Deactivate this resource profile? Project and time history will be retained."
-              : "Deactivate this staff account? They will be signed out immediately. Project and time history will be retained.",
-          )
-        )
-          return;
-        setBusy(true);
-        setError("");
-        try {
-          await api(
-            `/users${value ? `/${value.id}` : ""}`,
-            value ? "PUT" : "POST",
-            {
-              name,
-              email,
-              role,
-              active,
-              password: role === "Resource" ? undefined : password,
-              version: value?.version || 0,
-            },
-          );
-          onSaved();
-        } catch (e) {
-          setError(message(e));
-        } finally {
-          setBusy(false);
-        }
-      }}
-    >
-      <h2>{value ? "Edit person" : "Create person"}</h2>
-      <div className="form-grid">
+    <section className="card data-card" aria-label={title}>
+      <div className="table-heading">
+        <h2>{title}</h2>
+        <span className="muted">
+          {data?.total ?? "—"}{" "}
+          {kind === "staff" ? "staff accounts" : "resource profiles"}
+        </span>
+      </div>
+      <form
+        className="filters table-filters"
+        aria-label={`${title} filters`}
+        onSubmit={(e) => {
+          e.preventDefault();
+          update({ [key("q")]: query, [key("page")]: 1 });
+        }}
+      >
         <label>
-          Full name
+          Find {kind === "staff" ? "staff" : "resource"}
           <input
-            required
-            maxLength={120}
-            value={name}
-            onChange={(e) => setName(e.target.value)}
+            type="search"
+            maxLength={100}
+            value={query}
+            placeholder="Name or email address"
+            onChange={(e) => setQuery(e.target.value)}
           />
         </label>
         <label>
-          Email
-          <input
-            type="email"
-            required
-            maxLength={254}
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-          />
-        </label>
-        <label>
-          Role
+          {title} status
           <select
-            aria-label="Role"
-            value={role}
-            disabled={value?.role === "Resource"}
-            onChange={(e) => setRole(e.target.value as Role)}
+            value={params.get(key("status")) || ""}
+            onChange={(e) =>
+              update({ [key("status")]: e.target.value, [key("page")]: 1 })
+            }
           >
-            {(actor.role === "Admin"
-              ? value && value.role !== "Resource"
-                ? ["Admin", "Manager"]
-                : ["Resource", "Manager", "Admin"]
-              : ["Resource"]
-            ).map((x) => (
-              <option key={x}>{x}</option>
-            ))}
+            <option value="">All statuses</option>
+            <option value="active">Active</option>
+            <option value="inactive">Deactivated</option>
           </select>
         </label>
-        {!value && role !== "Resource" && (
-          <label>
-            Initial password
-            <input
-              type="password"
-              required
-              minLength={12}
-              maxLength={128}
-              autoComplete="new-password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-            />
-            <small>
-              Share securely. The user can change it from their account page.
-            </small>
-          </label>
-        )}
-        {value && (
-          <label className="check-label">
-            <input
-              type="checkbox"
-              checked={active}
-              disabled={value.id === actor.id}
-              onChange={(e) => setActive(e.target.checked)}
-            />
-            Active
-          </label>
-        )}
-      </div>
-      {role === "Resource" && (
-        <p className="muted">
-          Resource profiles have no password or system sign-in. Admins and
-          Managers maintain their details and record project hours.
-        </p>
-      )}
+        <label>
+          Sort {kind}
+          <select
+            value={params.get(key("sort")) || "name"}
+            onChange={(e) =>
+              update({ [key("sort")]: e.target.value, [key("page")]: 1 })
+            }
+          >
+            <option value="name">Name A–Z</option>
+            <option value="email">Email A–Z</option>
+            {kind === "staff" && <option value="role">Role</option>}
+          </select>
+        </label>
+        <button>Search</button>
+        <button type="button" className="secondary" onClick={clear}>
+          Clear filters
+        </button>
+      </form>
       <Notice error={error} />
-      <div>
-        <button disabled={busy}>{busy ? "Saving…" : "Save person"}</button>
-      </div>
-    </form>
+      {error && (
+        <button className="secondary" onClick={reload}>
+          Reload {kind}
+        </button>
+      )}
+      {loading && <Loading />}
+      {data && (
+        <>
+          {data.items.length ? (
+            <div className="table-wrap">
+              <table>
+                <caption className="visually-hidden">{title}</caption>
+                <thead>
+                  <tr>
+                    <th>Name</th>
+                    <th>Email</th>
+                    {kind === "staff" && <th>Role</th>}
+                    <th>Status</th>
+                    <th>Access</th>
+                    <th>
+                      <span className="visually-hidden">Actions</span>
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {data.items.map((u) => (
+                    <LinkedRow
+                      key={u.id}
+                      href={detailHref(
+                        kind === "staff" ? "users" : "network",
+                        u.id,
+                        href,
+                      )}
+                    >
+                      <td>
+                        <Link
+                          className="entity-name"
+                          href={detailHref(
+                            kind === "staff" ? "users" : "network",
+                            u.id,
+                            href,
+                          )}
+                        >
+                          {u.name}
+                        </Link>
+                      </td>
+                      <td>{u.email}</td>
+                      {kind === "staff" && (
+                        <td>
+                          <Badge>{u.role}</Badge>
+                        </td>
+                      )}
+                      <td>
+                        <Badge>{u.active ? "Active" : "Deactivated"}</Badge>
+                      </td>
+                      <td>
+                        {kind === "staff" ? "Staff sign-in" : "Profile only"}
+                      </td>
+                      <td>
+                        <PersonActions
+                          person={u}
+                          back={href}
+                          onChanged={reload}
+                        />
+                      </td>
+                    </LinkedRow>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <Empty>
+              No {kind === "staff" ? "staff accounts" : "resources"} match these
+              filters.
+              <div className="empty-actions">
+                <button className="secondary" onClick={clear}>
+                  Clear filters
+                </button>
+              </div>
+            </Empty>
+          )}
+          <Pager
+            data={data}
+            onPage={(page) => update({ [key("page")]: page })}
+            label={`${title} pagination`}
+          />
+        </>
+      )}
+    </section>
   );
 }
