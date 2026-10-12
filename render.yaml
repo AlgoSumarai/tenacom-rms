@@ -1,0 +1,24 @@
+services:
+  - type: web
+    name: tenacom-rms-api
+    runtime: docker
+    plan: free
+    dockerfilePath: ./apps/api/Dockerfile.render
+    dockerContext: .
+    healthCheckPath: /health/ready
+    autoDeployTrigger: "off"
+    envVars:
+      - key: ASPNETCORE_ENVIRONMENT
+        value: Production
+      - key: ASPNETCORE_HTTP_PORTS
+        value: "8080"
+      - key: PORT
+        value: "8080"
+      - key: Security__SecureCookies
+        value: "true"
+      - key: Security__Origin
+        sync: false
+      - key: AllowedHosts
+        sync: false
+      - key: ConnectionStrings__Database
+        sync: false
